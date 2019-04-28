@@ -44,6 +44,36 @@ defmodule PhexTest do
       assert {:ok, %{"a" => 1, "b" => 2}, ""} = decode("a:2:{s:1:\"a\";i:1;s:1:\"b\";i:2;}")
       assert {:error, _msg, _rest} = decode("a:2{s:1:\"a\";i:1;s:1:\"b\";i:2;}")
     end
+
+    test "objects" do
+      serialized =
+        ~S(O:1:"A":5:{s:14:"AaPrivateVar";s:7:"private";s:14:"AaPrivateObj";O:1:"A":5:{s:14:"AaPrivateVar";s:7:"private";s:14:"AaPrivateObj";N;s:10:"aPublicVar";s:6:"public";s:10:"aPublicObj";N;s:4:"kind";s:7:"private";}s:10:"aPublicVar";s:6:"public";s:10:"aPublicObj";O:1:"A":5:{s:14:"AaPrivateVar";s:7:"private";s:14:"AaPrivateObj";N;s:10:"aPublicVar";s:6:"public";s:10:"aPublicObj";N;s:4:"kind";s:6:"public";}s:4:"kind";N;})
+
+      objects = %{
+        :__object__ => "A",
+        "AaPrivateObj" => %{
+          :__object__ => "A",
+          "AaPrivateObj" => nil,
+          "AaPrivateVar" => "private",
+          "aPublicObj" => nil,
+          "aPublicVar" => "public",
+          "kind" => "private"
+        },
+        "AaPrivateVar" => "private",
+        "aPublicObj" => %{
+          :__object__ => "A",
+          "AaPrivateObj" => nil,
+          "AaPrivateVar" => "private",
+          "aPublicObj" => nil,
+          "aPublicVar" => "public",
+          "kind" => "public"
+        },
+        "aPublicVar" => "public",
+        "kind" => nil
+      }
+
+      assert {:ok, objects, ""} == decode(serialized)
+    end
   end
 
   describe "encode" do
@@ -68,6 +98,7 @@ defmodule PhexTest do
     end
 
     test "string" do
+      assert {:ok, "s:12:\"Hello Wörld\";"} = encode("Hello Wörld")
       assert {:ok, "s:11:\"hello_world\";"} = encode("hello_world")
       assert {:ok, "s:12:\"hello\\nwörld\";"} = encode("hello\nwörld")
     end

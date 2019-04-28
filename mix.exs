@@ -1,7 +1,7 @@
 defmodule Phex.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
 
   def project do
     [
@@ -31,7 +31,7 @@ defmodule Phex.MixProject do
   end
 
   defp description() do
-    "Elixir de-serialization library for PHP-serialization"
+    "A PHP serialized decoder and encoder."
   end
 
   defp docs do

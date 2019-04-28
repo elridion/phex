@@ -82,9 +82,17 @@ defmodule Phex do
 
       iex> decode!("a:2:{s:6:\"Bunker\";s:4:\"Blue\";s:7:\"Buscemi\";s:4:\"Pink\";}")
       %{"Bunker" => "Blue", "Buscemi" => "Pink"}
+
+  ### Objects
+      iex> decode!(~S(O:8:"PhpClass":2:{s:21:"PhpClassaPrivateVar";s:16:"A private String";s:10:"aPublicVar";s:15:"A public String";}))
+      %{
+        :__object__ => "PhpClass",
+        "PhpClassaPrivateVar" => "A private String",
+        "aPublicVar" => "A public String"
+      }
   """
 
-  @doc false
+
   def decode!(binary) when is_binary(binary) do
     case decode(binary) do
       {:ok, result, _rest} -> result
@@ -92,7 +100,6 @@ defmodule Phex do
     end
   end
 
-  @doc false
   def decode(binary)
 
   def decode(<<"N;", rest::binary>>) do
@@ -137,12 +144,9 @@ defmodule Phex do
     end
   end
 
-  def decode(<<"s:", rest::binary>>) do
-    with {size, <<":", rest::binary>>} <- Integer.parse(rest),
-         {:ok, value, rest} <- decode_string(size, rest) do
-      {:ok, value, rest}
+  def decode(<<"s:", _rest::binary>> = rest) do
+    decode_string(rest)
     end
-  end
 
   def decode(<<"a:", rest::binary>>) do
     with {size, <<":", rest::binary>>} <- Integer.parse(rest),
@@ -158,30 +162,56 @@ defmodule Phex do
   end
 
   def decode(<<"O:", rest::binary>>) do
-    {:error, "Objects are currently not supported", rest}
+    with {size, <<":", rest::binary>>} <- Integer.parse(rest),
+         {:ok, name, <<":", rest::binary>>} <- decode_string(size, rest, 0),
+         {size, <<":", rest::binary>>} <- Integer.parse(rest),
+         {:ok, values, rest} <- decode_object_values(size, rest) do
+      {:ok, Map.put(values, :__object__, name), rest}
+    else
+      {:error, _msg, _rest} = error ->
+        error
+
+      {_size, rest} ->
+        {:error, "can't parse object - missing size", rest}
+  end
   end
 
   def decode(rest) when is_binary(rest) do
     {:error, "unable to decode", rest}
   end
 
-  defp decode_string(size, <<"\"", rest::binary>>) do
-    decode_string("", size, rest)
+  defp decode_string(binary, offset \\ 0)
+
+  defp decode_string(<<"s:", rest::binary>>, offset) do
+    with {size, <<":", rest::binary>>} <- Integer.parse(rest),
+         {:ok, value, <<";", rest::binary>>} <- decode_string(size, rest, offset) do
+      {:ok, value, rest}
+  end
   end
 
-  defp decode_string(_size, rest) do
-    {:error, rest}
+  defp decode_string(size, binary, offset) do
+    case binary do
+      <<"\"", rest::binary>> ->
+        decode_string("", size, rest, offset)
+
+      rest ->
+        {:error, "String missing starting delimiter", rest}
+  end
   end
 
-  defp decode_string(acc, size, <<"\";", rest::binary>>) do
-    if size == 0 do
+  defp decode_string(acc, size, rest, offset) when offset < 0 do
+    decode_string(acc, size + offset, rest, abs(offset))
+  end
+
+  defp decode_string(acc, size, <<"\"", rest::binary>>, offset) do
+    if size == 0 or size + offset == 0 do
       {:ok, acc, rest}
     else
       {:error, "string length incorrect", rest}
     end
   end
 
-  defp decode_string(acc, size, <<"\\", rest::binary>>) when size > 0 do
+  defp decode_string(acc, size, <<"\\", rest::binary>>, offset) when size > 0 do
     rest
     |> case do
       <<"n", rest::binary>> -> {:ok, "\n", rest}
@@ -197,23 +227,28 @@ defmodule Phex do
     end
     |> case do
       {:ok, unescaped, rest} ->
-        decode_string(acc <> unescaped, size - 1, rest)
+        decode_string(acc <> unescaped, size - 1, rest, offset)
 
       error ->
         error
     end
   end
 
-  defp decode_string(acc, size, <<char::utf8, rest::binary>>) when size > 0 do
-    decode_string(<<acc::binary, char::utf8>>, size - byte_size(<<char::utf8>>), rest)
+  defp decode_string(acc, size, <<char::utf8, rest::binary>>, offset) when size > 0 do
+    decode_string(<<acc::binary, char::utf8>>, size - byte_size(<<char::utf8>>), rest, offset)
   end
 
-  defp decode_string(_acc, size, rest) when size <= 0 do
+  defp decode_string(acc, size, rest, offset) do
+    cond do
+      size < 0 and offset == 0 ->
     {:error, "incorrect string length", rest}
-  end
 
-  defp decode_string(_acc, _size, rest) do
-    {:error, "can't pares string", rest}
+      size <= 0 and offset > 0 ->
+        decode_string(acc, offset, rest, 0)
+
+      true ->
+        {:error, "can't parse string", rest}
+  end
   end
 
   defp decode_array(size, rest)
@@ -244,7 +279,34 @@ defmodule Phex do
     end
   end
 
-  @doc false
+  defp decode_object_values(size, rest)
+
+  defp decode_object_values(size, <<"{", rest::binary>>) do
+    case decode_object_values(size, rest) do
+      {:ok, array, rest} ->
+        {:ok, Map.new(array), rest}
+
+      error ->
+        error
+    end
+  end
+
+  defp decode_object_values(size, <<"}", rest::binary>>) do
+    if size == 0 do
+      {:ok, [], rest}
+    else
+      {:error, "incorrect array length", rest}
+    end
+  end
+
+  defp decode_object_values(size, rest) do
+    with {:ok, key, rest} <- decode_string(rest, -2),
+         {:ok, value, rest} <- decode(rest),
+         {:ok, array, rest} <- decode_object_values(size - 1, rest) do
+      {:ok, [{key, value} | array], rest}
+    end
+  end
+
   def encode!(term) do
     case encode(term) do
       {:ok, result} -> result
@@ -252,7 +314,6 @@ defmodule Phex do
     end
   end
 
-  @doc false
   def encode(term)
 
   def encode(nil) do
