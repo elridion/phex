@@ -91,7 +91,7 @@ defmodule Phex do
         "aPublicVar" => "A public String"
       }
   """
-
+  defstruct [:key]
 
   def decode!(binary) when is_binary(binary) do
     case decode(binary) do
@@ -314,6 +314,8 @@ defmodule Phex do
     end
   end
 
+  @spec encode(false | nil | true | binary() | number() | map()) ::
+          {:ok, <<_::8, _::_*8>>} | {:error, <<_::96>>, [{any(), any()}]}
   def encode(term)
 
   def encode(nil) do
@@ -368,6 +370,7 @@ defmodule Phex do
       rest -> {:error, "invalid character", rest}
     end
     |> case do
+
       {:ok, escaped, rest} -> encode_string(acc <> escaped, rest)
       error -> error
     end
@@ -379,9 +382,11 @@ defmodule Phex do
     encode_array(rest, "a:" <> Integer.to_string(length(rest)) <> ":{")
   end
 
-  defp encode_array([{key, value} | rest], acc) when is_binary(key) or is_integer(key) do
-    with {:ok, encoded_key} <- encode(key),
+  defp encode_array([{key, value} | rest], acc) when is_binary(key) or is_integer(key) or is_float(key) or is_nil(key) or is_boolean(key) do
+    with {:ok, encoded_key} <- validate_array_key(key) |> encode(),
          {:ok, encoded_value} <- encode(value) do
+    IO.inspect(acc)
+
       encode_array(rest, acc <> encoded_key <> encoded_value)
     end
   end
@@ -392,5 +397,37 @@ defmodule Phex do
 
   defp encode_array(list, _acc) do
     {:error, "array encode", list}
+  end
+
+  defp validate_array_key(key) when is_integer(key) or is_boolean(key), do: key
+
+  defp validate_array_key(key) when is_nil(key), do: ""
+
+  defp validate_array_key(key) when is_float(key), do: Kernel.trunc(key)
+
+  defp validate_array_key(key) when is_bitstring(key) do
+    if !Regex.match?(~r/^[0-9]*$/, key) or Regex.match?(~r/^0[0-9]*$/, key) do
+      key
+    else
+      String.to_integer(key)
+    end
+  end
+
+  def rewrite_identical_index(map) do
+    Enum.to_list(map)
+    |> Enum.sort(fn({key1, _value1}, {key2, _value2}) -> key1 < key2 end)
+    |> IO.inspect()
+    |> Enum.map(fn {k,v} ->
+      #k = if is_boolean(k), do: 1, else: 0
+    case k do
+      true  -> {validate_array_key(1), v}
+      false -> {validate_array_key(0), v}
+      _ -> {validate_array_key(k), v} end
+    end)
+    |> IO.inspect()
+    |> Enum.reduce(fn {k,v}, {k1,v1} ->
+      if k == k1, do: {k, v}, else: {k1, v1}
+    end)
+    # |> Map.put()
   end
 end
