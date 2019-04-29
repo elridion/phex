@@ -416,7 +416,6 @@ defmodule Phex do
   def rewrite_identical_index(map) do
     Enum.to_list(map)
     |> Enum.sort(fn({key1, _value1}, {key2, _value2}) -> key1 < key2 end)
-    |> IO.inspect()
     |> Enum.map(fn {k,v} ->
       #k = if is_boolean(k), do: 1, else: 0
     case k do
@@ -424,7 +423,6 @@ defmodule Phex do
       false -> {validate_array_key(0), v}
       _ -> {validate_array_key(k), v} end
     end)
-    |> IO.inspect()
     |> Enum.reduce(fn {k,v}, {k1,v1} ->
       if k == k1, do: {k, v}, else: {k1, v1}
     end)
