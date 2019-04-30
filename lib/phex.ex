@@ -146,7 +146,7 @@ defmodule Phex do
 
   def decode(<<"s:", _rest::binary>> = rest) do
     decode_string(rest)
-    end
+  end
 
   def decode(<<"a:", rest::binary>>) do
     with {size, <<":", rest::binary>>} <- Integer.parse(rest),
@@ -173,7 +173,7 @@ defmodule Phex do
 
       {_size, rest} ->
         {:error, "can't parse object - missing size", rest}
-  end
+    end
   end
 
   def decode(rest) when is_binary(rest) do
@@ -186,7 +186,7 @@ defmodule Phex do
     with {size, <<":", rest::binary>>} <- Integer.parse(rest),
          {:ok, value, <<";", rest::binary>>} <- decode_string(size, rest, offset) do
       {:ok, value, rest}
-  end
+    end
   end
 
   defp decode_string(size, binary, offset) do
@@ -196,7 +196,7 @@ defmodule Phex do
 
       rest ->
         {:error, "String missing starting delimiter", rest}
-  end
+    end
   end
 
   defp decode_string(acc, size, rest, offset) when offset < 0 do
@@ -241,14 +241,14 @@ defmodule Phex do
   defp decode_string(acc, size, rest, offset) do
     cond do
       size < 0 and offset == 0 ->
-    {:error, "incorrect string length", rest}
+        {:error, "incorrect string length", rest}
 
       size <= 0 and offset > 0 ->
         decode_string(acc, offset, rest, 0)
 
       true ->
         {:error, "can't parse string", rest}
-  end
+    end
   end
 
   defp decode_array(size, rest)
@@ -370,62 +370,61 @@ defmodule Phex do
       rest -> {:error, "invalid character", rest}
     end
     |> case do
-
       {:ok, escaped, rest} -> encode_string(acc <> escaped, rest)
       error -> error
     end
   end
 
-  defp encode_array(rest, acc \\ "")
+  defp encode_array(rest, acc \\ "", origin \\ "")
 
-  defp encode_array(rest, "") do
+  defp encode_array(rest, "", _origin) do
     encode_array(rest, "a:" <> Integer.to_string(length(rest)) <> ":{")
   end
 
-  defp encode_array([{key, value} | rest], acc) when is_binary(key) or is_integer(key) or is_float(key) or is_nil(key) or is_boolean(key) do
-    with {:ok, encoded_key} <- validate_array_key(key) |> encode(),
-         {:ok, encoded_value} <- encode(value) do
-    IO.inspect(acc)
+  defp encode_array([{nil, value} | rest], acc, _origin) do
+    encode_array([{"", value} | rest], acc)
+  end
 
+  defp encode_array([{true, value} | rest], acc, _origin) do
+    encode_array([{1, value} | rest], acc)
+  end
+
+  defp encode_array([{false, value} | rest], acc, _origin) do
+    encode_array([{0, value} | rest], acc)
+  end
+
+  defp encode_array([{key, value} | rest], acc, _origin) when is_float(key) do
+    encode_array([{Kernel.trunc(key), value} | rest], acc)
+  end
+
+  # <<char::utf8, rest::binary>> when char in 48..57 (0..9)
+  defp encode_array(
+         [{<<char_first::utf8, char_next::utf8, rest_key::binary>> = binary, value} | rest],
+         acc,
+         origin
+       )
+       when char_first in 49..57 and rest_key != "" do
+    origin = if origin > binary, do: origin, else: binary
+    encode_array([{<<char_next::utf8, rest_key::binary>>, value} | rest], acc, origin)
+  end
+
+  defp encode_array([{<<char_key::utf8, _rest_key::binary>>, value} | rest], acc, origin)
+       when char_key in 49..57 do
+    encode_array([{String.to_integer(origin), value} | rest], acc)
+  end
+
+  defp encode_array([{key, value} | rest], acc, _origin) when is_integer(key) or is_binary(key) do
+    with {:ok, encoded_key} <- encode(key),
+         {:ok, encoded_value} <- encode(value) do
       encode_array(rest, acc <> encoded_key <> encoded_value)
     end
   end
 
-  defp encode_array([], acc) when acc != "" do
+  defp encode_array([], acc, _origin) when acc != "" do
     {:ok, acc <> "}"}
   end
 
-  defp encode_array(list, _acc) do
+  defp encode_array(list, _acc, _origin) do
     {:error, "array encode", list}
-  end
-
-  defp validate_array_key(key) when is_integer(key) or is_boolean(key), do: key
-
-  defp validate_array_key(key) when is_nil(key), do: ""
-
-  defp validate_array_key(key) when is_float(key), do: Kernel.trunc(key)
-
-  defp validate_array_key(key) when is_bitstring(key) do
-    if !Regex.match?(~r/^[0-9]*$/, key) or Regex.match?(~r/^0[0-9]*$/, key) do
-      key
-    else
-      String.to_integer(key)
-    end
-  end
-
-  def rewrite_identical_index(map) do
-    Enum.to_list(map)
-    |> Enum.sort(fn({key1, _value1}, {key2, _value2}) -> key1 < key2 end)
-    |> Enum.map(fn {k,v} ->
-      #k = if is_boolean(k), do: 1, else: 0
-    case k do
-      true  -> {validate_array_key(1), v}
-      false -> {validate_array_key(0), v}
-      _ -> {validate_array_key(k), v} end
-    end)
-    |> Enum.reduce(fn {k,v}, {k1,v1} ->
-      if k == k1, do: {k, v}, else: {k1, v1}
-    end)
-    # |> Map.put()
   end
 end
