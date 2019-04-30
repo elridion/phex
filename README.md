@@ -8,9 +8,9 @@ The package can be installed by adding `phex` to your list of dependencies in `m
 ```elixir
 def deps do
   [
-    {:phex, "~> 0.1.0"}
+    {:phex, "~> 0.2.0"}
   ]
 end
 ```
-Full documentation can be found at [https://hexdocs.pm/phex](https://hexdocs.pm/phex).
+Documentation can be found at [hex](https://hexdocs.pm/phex).
 
