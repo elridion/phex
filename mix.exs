@@ -1,7 +1,7 @@
 defmodule Phex.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "1.0.0-rc.0"
 
   def project do
     [
@@ -26,7 +26,8 @@ defmodule Phex.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_doc, "~> 0.20", only: :dev}
+      {:ex_doc, "~> 0.20", only: :dev},
+      {:credo, "~> 1.0", only: :dev}
     ]
   end
 
