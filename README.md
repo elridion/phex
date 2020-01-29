@@ -1,5 +1,5 @@
 # Phex
-PHP serialized decoder and encoder for Elixir.
+PHP serialized decoder and encoder for Elixir.  
 Documentation can be found at [hex](https://hexdocs.pm/phex).
 ## Installation
 
@@ -13,7 +13,7 @@ def deps do
 end
 ```
 ## Copyright and License
-Phex - PHP serialized decoder and encoder for Elixir.
+Phex - PHP serialized decoder and encoder for Elixir.  
 Copyright (C) 2019  Hans Bernhard Gödeke
 
 This program is free software: you can redistribute it and/or modify
