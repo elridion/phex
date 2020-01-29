@@ -3,7 +3,6 @@ defmodule Phex do
   A PHP serialized decoder and encoder.
 
   ## Installation
-
   The package can be installed by adding `phex` to your list of dependencies in `mix.exs`:
 
   ```elixir
@@ -21,65 +20,45 @@ defmodule Phex do
       iex> Phex.decode!("a:2:{s:3:\\\"age\\\";i:42;s:4:\\\"name\\\";s:8:\\\"John Doe\\\";}")
       %{"age" => 42, "name" => "John Doe"}
 
-  ## PHP Serialization
-  Currently only maps with keys which are either integers or strings are supported.
+  ## PHP arrays and key-collisions
+  The way in which PHP handles array keys is a bit peculiar, the details can be found [here](http://www.phpinternalsbook.com/php5/hashtables/array_api.html#symtable-and-array-api).
 
-  This works in most cases but can create invalid serialized data if the peculiarities of PHP arrays are not taken into account.
-  More information can be found in the PHP manual [here](https://www.php.net/manual/en/language.types.array.php).
+  Phex mimics this an will cast values in the manner described [here](https://www.php.net/manual/en/language.types.array.php).
 
-  As of now supported types are ...
+      iex> %{"1" => "a", 1.1 => "b"}
+      ...> |> Phex.encode!()
+      ...> |> Phex.decode!()
+      ** (Phex.EncodeError) Duplicate key: 1
 
-      iex> encode!(nil)
-      "N;"
+      iex> %{"1" => "1"}
+      ...> |> Phex.encode!()
+      ...> |> Phex.decode!()
+      %{1 => "1"}
 
-      iex> decode!("N;")
-      nil
+      iex> %{1.1 => "1"}
+      ...> |> Phex.encode!()
+      ...> |> Phex.decode!()
+      %{1 => "1"}
 
-  ### Boolean
-      iex> encode!(true)
-      "b:1;"
+      iex> %{nil => "1"}
+      ...> |> Phex.encode!()
+      ...> |> Phex.decode!()
+      %{"" => "1"}
 
-      iex> decode!("b:0;")
-      false
+      iex> %{true => "1"}
+      ...> |> Phex.encode!()
+      ...> |> Phex.decode!()
+      %{1 => "1"}
 
-  ### Integer
-      iex> encode!(9000)
-      "i:9000;"
-
-      iex> decode!("i:-212;")
-      -212
-
-  ### Float
-      iex> encode!(3.14159265359)
-      "d:3.14159265359;"
-
-      iex> decode!("d:6.62607004;")
-      6.62607004
-
-  ### String
-      iex> encode!("Hello")
-      "s:5:\\\"Hello\\\";"
-
-      iex> decode!("s:5:\\\"World\\\";")
-      "World"
-
-  ### Maps (PHP-Arrays)
-      iex> encode!(%{"Blue" => 2, "Pink" => 4})
-      "a:2:{s:4:\\\"Blue\\\";i:2;s:4:\\\"Pink\\\";i:4;}"
-
-      iex> decode!("a:2:{s:6:\\\"Bunker\\\";s:4:\\\"Blue\\\";s:7:\\\"Buscemi\\\";s:4:\\\"Pink\\\";}")
-      %{"Bunker" => "Blue", "Buscemi" => "Pink"}
-
-      iex> decode!("a:2:{s:6:\\\"Bunker\\\";s:4:\\\"Blue\\\";s:7:\\\"Buscemi\\\";s:4:\\\"Pink\\\";}", arrays: :strict)
-      [{"Bunker", "Blue"}, {"Buscemi", "Pink"}]
   """
-  alias Phex.Encode
+  alias Phex.{Encode, Decode}
 
   @type key :: String.t() | integer()
   @type t :: nil | boolean() | number() | String.t() | array()
   @type array :: [{key, t()}]
 
-  @type decode_opts :: [{:arrays, :naive | :strict} | decode_opts()]
+  # @type decode_opts :: [{:arrays, :naive | :strict} | decode_opts()]
+  @type decode_opts :: :naive | :strict
 
   # @type encode_opts :: [{:arrays, :naive | :strict} | encode_opts()]
 
@@ -91,18 +70,62 @@ defmodule Phex do
     defexception [:message]
   end
 
+  @doc ~S"""
+  Creates a PHP-Serialized binary from a term.
+
+  Like `encode/2` but raises a in case of errors.
+  ## Examples
+      iex> encode!(%{"Blue" => 2, "Pink" => 4})
+      "a:2:{s:4:\"Blue\";i:2;s:4:\"Pink\";i:4;}"
+
+      iex> Phex.encode!(%{"" => 2, nil => 4})
+      ** (Phex.EncodeError) Duplicate key: ""
+  """
   def encode!(term) do
     term
     |> Encode.encode()
     |> IO.iodata_to_binary()
   end
 
+  @doc ~S"""
+  Creates a PHP-Serialized binary from a term.
+  ## Examples
+      iex> encode(nil)
+      {:ok, "N;"}
+
+      iex> encode(true)
+      {:ok, "b:1;"}
+
+      iex> encode(9000)
+      {:ok, "i:9000;"}
+
+      iex> encode(3.14159265359)
+      {:ok, "d:3.14159265359;"}
+
+      iex> encode("Hello")
+      {:ok, "s:5:\"Hello\";"}
+
+      iex> encode(%{"Blue" => 2, "Pink" => 4})
+      {:ok, "a:2:{s:4:\"Blue\";i:2;s:4:\"Pink\";i:4;}"}
+  """
   def encode(term) do
     {:ok, encode!(term)}
   rescue
-    e in Phex.EncodeError -> {:error, e.message}
+    e in EncodeError -> {:error, e.message}
   end
 
+  @doc """
+  Parses a PHP-Serialized value from a binary.
+
+  Like `decode/2` but will unwrap the error tuple and raise
+  in case of errors.
+  ## Examples
+      iex> Phex.decode!("a:0:{}")
+      %{}
+
+      iex> Phex.decode!("foo")
+      ** (Phex.DecodeError) unable to decode
+  """
   def decode!(binary, opt \\ :naive) when is_binary(binary) do
     case decode(binary, opt) do
       {:ok, result, _rest} -> result
@@ -110,11 +133,35 @@ defmodule Phex do
     end
   end
 
+  @doc """
+  Parses a PHP-Serialized value from a binary.
+  ## Examples
+      iex> decode("N;")
+      {:ok, nil, ""}
+
+      iex> decode("b:0;")
+      {:ok, false, ""}
+
+      iex> decode("i:-212;")
+      {:ok, -212, ""}
+
+      iex> decode("d:6.62607004;")
+      {:ok, 6.62607004, ""}
+
+      iex> decode("s:5:\\\"World\\\";")
+      {:ok, "World", ""}
+
+      iex> decode("a:2:{s:6:\\\"Bunker\\\";s:4:\\\"Blue\\\";s:7:\\\"Buscemi\\\";s:4:\\\"Pink\\\";}")
+      {:ok, %{"Bunker" => "Blue", "Buscemi" => "Pink"}, ""}
+
+      iex> decode("a:2:{s:6:\\\"Bunker\\\";s:4:\\\"Blue\\\";s:7:\\\"Buscemi\\\";s:4:\\\"Pink\\\";}", arrays: :strict)
+      {:ok, [{"Bunker", "Blue"}, {"Buscemi", "Pink"}], ""}
+  """
   # @spec decode(binary(), decode_opts()) ::
   #         {:ok, t(), binary()} | {:error, reason :: String.t(), binary()}
   def decode(binary, opt \\ :naive) do
     # dec_opts = Enum.into(opts, %{arrays: :naive})
 
-    Phex.Decode.decode(binary, opt)
+    Decode.decode(binary, opt)
   end
 end
